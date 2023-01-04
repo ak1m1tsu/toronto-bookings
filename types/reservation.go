@@ -1,8 +1,13 @@
 package types
 
-import "fmt"
+import "regexp"
 
-const minReservationFirstNameLen = 3
+const (
+	minReservationFirstNameLen int    = 3
+	minReservationLastNameLen  int    = 3
+	phoneNumberRegexPattern    string = `^(\+7|7|8)?[\s\-]?\(?[489][0-9]{2}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$`
+	emailRegexPattern          string = `^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`
+)
 
 type Reservation struct {
 	ID          string `bson:"_id,omitempty" json:"id"`
@@ -31,14 +36,35 @@ func NewProductFromReq(req *CreateReservationRequest) (*Reservation, error) {
 		FirstName:   req.FirstName,
 		LastName:    req.LastName,
 		Email:       req.Email,
-		PhoneNumber: req.PhoneNumber,
+		PhoneNumber: normalizePhoneNumber(req.PhoneNumber),
 	}, nil
 }
 
 func ValidateCreateReservationRequest(req *CreateReservationRequest) error {
 	if len(req.FirstName) < minReservationFirstNameLen {
-		return fmt.Errorf("the first name is to short. min length is %d", minReservationFirstNameLen)
+		return FirstNameValidationError
+	}
+
+	if len(req.LastName) < minReservationLastNameLen {
+		return LastNameValidationError
+	}
+
+	if !isFieldValid(req.Email, emailRegexPattern) {
+		return EmailAddressValidationError
+	}
+
+	if !isFieldValid(req.PhoneNumber, phoneNumberRegexPattern) {
+		return PhoneNumberValidationError
 	}
 
 	return nil
+}
+
+func isFieldValid(field, pattern string) bool {
+	return regexp.MustCompile(pattern).MatchString(field)
+}
+
+func normalizePhoneNumber(phoneNumber string) string {
+	re := regexp.MustCompile(`\D`)
+	return re.ReplaceAllString(phoneNumber, "")
 }

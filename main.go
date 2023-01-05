@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/anthdm/weavebox"
 	"github.com/romankravchuk/toronto-bookings/api"
 	"github.com/romankravchuk/toronto-bookings/store"
@@ -11,13 +10,9 @@ import (
 	"log"
 )
 
-func handleAPIError(ctx *weavebox.Context, err error) {
-	fmt.Println(err)
-}
-
 func main() {
 	app := weavebox.New()
-	app.ErrorHandler = handleAPIError
+	app.ErrorHandler = api.HandleAPIError
 	adminRoute := app.Box("/admin")
 
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
@@ -27,8 +22,11 @@ func main() {
 	reservationStore := store.NewMongoReservationStore(client.Database("toronto-bookings"))
 	reservationHandler := api.NewReservationHandler(reservationStore)
 
-	adminRoute.Get("/reservation/:id", reservationHandler.HandleGetReservationByID)
-	adminRoute.Post("/reservation", reservationHandler.HandlePostReservation)
+	// handle admin/reservation
+	reservationRoute := adminRoute.Box("/reservation")
+	reservationRoute.Get("/:id", reservationHandler.HandleGetReservationByID)
+	reservationRoute.Get("", reservationHandler.HandleGetAllReservations)
+	reservationRoute.Post("", reservationHandler.HandlePostReservation)
 
 	log.Fatal(app.Serve(3000))
 }

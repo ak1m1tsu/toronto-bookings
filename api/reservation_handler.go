@@ -21,16 +21,16 @@ func NewReservationHandler(store storage.ReservationStorer) *ReservationHandler 
 func (h *ReservationHandler) HandlePostReservation(ctx *weavebox.Context) error {
 	reservationReq := &types.CreateReservationRequest{}
 	if err := json.NewDecoder(ctx.Request().Body).Decode(reservationReq); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, ServerInternalError)
+		return err
 	}
 
 	reservation, err := types.NewProductFromReq(reservationReq)
 	if err != nil {
-		return ctx.JSON(http.StatusBadRequest, APIError{ErrorMessage: err.Error(), Status: http.StatusBadRequest})
+		return err
 	}
 
 	if err = h.store.Insert(ctx.Context, reservation); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, ServerInternalError)
+		return err
 	}
 
 	return ctx.JSON(http.StatusOK, reservation)
@@ -41,7 +41,15 @@ func (h *ReservationHandler) HandleGetReservationByID(ctx *weavebox.Context) err
 	reservationReq := &types.GetReservationRequest{ID: id}
 	reservation, err := h.store.GetByID(ctx.Context, reservationReq.ID)
 	if err != nil {
-		return ctx.JSON(http.StatusNotFound, ReservationNotFoundError)
+		return err
 	}
 	return ctx.JSON(http.StatusOK, reservation)
+}
+
+func (h *ReservationHandler) HandleGetAllReservations(ctx *weavebox.Context) error {
+	reservations, err := h.store.GetAll(ctx.Context)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(http.StatusOK, reservations)
 }

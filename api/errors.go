@@ -1,17 +1,26 @@
 package api
 
-import "net/http"
+import (
+	"fmt"
+	"github.com/anthdm/weavebox"
+	"net/http"
+)
 
 type APIError struct {
-	ErrorMessage string `json:"error_message"`
-	Status       int    `json:"status"`
+	Message string `json:"error"`
+	Status  int    `json:"status"`
 }
 
 func (e *APIError) Error() string {
-	return e.ErrorMessage
+	return e.Message
 }
 
 var (
-	ReservationNotFoundError = APIError{ErrorMessage: "reservation not found", Status: http.StatusNotFound}
-	ServerInternalError      = APIError{ErrorMessage: "internal server error", Status: http.StatusInternalServerError}
+	ReservationNotFoundError = APIError{Message: "reservation not found", Status: http.StatusNotFound}
+	ServerInternalError      = APIError{Message: "internal server error", Status: http.StatusInternalServerError}
 )
+
+func HandleAPIError(ctx *weavebox.Context, err error) {
+	fmt.Println("API server:", err)
+	_ = ctx.JSON(http.StatusBadRequest, APIError{Message: err.Error(), Status: http.StatusBadRequest})
+}

@@ -35,3 +35,13 @@ func (s *MongoReservationStore) GetByID(ctx context.Context, id string) (*types.
 	)
 	return reservation, err
 }
+
+func (s *MongoReservationStore) GetAll(ctx context.Context) ([]*types.Reservation, error) {
+	cursor, err := s.db.Collection(s.coll).Find(ctx, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var reservations []*types.Reservation
+	err = cursor.All(ctx, &reservations)
+	return reservations, err
+}

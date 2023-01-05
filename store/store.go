@@ -8,4 +8,5 @@ import (
 type ReservationStorer interface {
 	Insert(context.Context, *types.Reservation) error
 	GetByID(context.Context, string) (*types.Reservation, error)
+	GetAll(context.Context) ([]*types.Reservation, error)
 }

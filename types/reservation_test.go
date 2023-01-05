@@ -10,7 +10,7 @@ type TestCase struct {
 	Want  any
 }
 
-func TestIsFieldValidWithEmailRegexPattern(t *testing.T) {
+func TestIsFieldValid_WithEmailRegexPattern(t *testing.T) {
 	testCases := []TestCase{
 		{"roman@gmail.com", true},
 		{"roman@gmail.co", true},
@@ -34,7 +34,7 @@ func TestIsFieldValidWithEmailRegexPattern(t *testing.T) {
 	}
 }
 
-func TestIsFieldValidWithPhoneNumberRegexPattern(t *testing.T) {
+func TestIsFieldValid_WithPhoneNumberRegexPattern(t *testing.T) {
 	testCases := []TestCase{
 		{"89501262318", true},
 		{"8 950 126 23 18", true},

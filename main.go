@@ -23,10 +23,10 @@ func main() {
 	reservationHandler := api.NewReservationHandler(reservationStore)
 
 	// handle admin/reservation
-	reservationRoute := adminRoute.Box("/reservation")
-	reservationRoute.Get("/:id", reservationHandler.HandleGetReservationByID)
-	reservationRoute.Get("", reservationHandler.HandleGetAllReservations)
-	reservationRoute.Post("", reservationHandler.HandlePostReservation)
+	adminReservationRoute := adminRoute.Box("/reservation")
+	adminReservationRoute.Get("/:id", reservationHandler.HandleGetReservationByID)
+	adminReservationRoute.Get("/", reservationHandler.HandleGetAllReservations)
+	adminReservationRoute.Post("/", reservationHandler.HandlePostReservation)
 
 	log.Fatal(app.Serve(3000))
 }

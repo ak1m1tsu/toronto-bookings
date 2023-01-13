@@ -1,8 +1,6 @@
 package types
 
-import (
-	"golang.org/x/crypto/bcrypt"
-)
+import "golang.org/x/crypto/bcrypt"
 
 type User struct {
 	ID                string `bson:"_id,omitempty" json:"id"`

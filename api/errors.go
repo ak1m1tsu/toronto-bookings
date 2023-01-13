@@ -2,8 +2,9 @@ package api
 
 import (
 	"fmt"
-	"github.com/anthdm/weavebox"
 	"net/http"
+
+	"github.com/anthdm/weavebox"
 )
 
 type APIError struct {
@@ -22,5 +23,10 @@ var (
 
 func HandleAPIError(ctx *weavebox.Context, err error) {
 	fmt.Println("API server:", err)
-	_ = ctx.JSON(http.StatusBadRequest, APIError{Message: err.Error(), Status: http.StatusBadRequest})
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		_ = ctx.JSON(http.StatusBadRequest, APIError{Message: err.Error(), Status: http.StatusInternalServerError})
+		return
+	}
+	_ = ctx.JSON(apiErr.Status, apiErr)
 }

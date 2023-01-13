@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"log"
+
 	"github.com/anthdm/weavebox"
 	"github.com/romankravchuk/toronto-bookings/api"
 	"github.com/romankravchuk/toronto-bookings/store"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"log"
 )
 
 func main() {
@@ -33,6 +34,8 @@ func main() {
 	authRoute := app.Box("/account")
 	authRoute.Post("/sign-in", authHandler.HandleSignIn)
 	authRoute.Post("/sign-up", authHandler.HandleSignUp)
+	authRoute.Post("/logout", authHandler.HandleLogout)
+	authRoute.Post("/refresh-token", authHandler.HandleRefreshToken)
 
 	// handle admin/reservation
 	adminReservationRoute := adminRoute.Box("/reservation")
@@ -41,4 +44,4 @@ func main() {
 	adminReservationRoute.Post("/", reservationHandler.HandlePostReservation)
 
 	log.Fatal(app.Serve(3000))
-}	
+}

@@ -1,8 +1,9 @@
 package api
 
 import (
+	"context"
 	"errors"
-	"os"
+	"net/http"
 
 	"github.com/anthdm/weavebox"
 	"github.com/golang-jwt/jwt/v4"
@@ -12,6 +13,9 @@ import (
 var (
 	ErrUnAuthenticated = errors.New("unauthenticated")
 	ErrUnAuthorized    = errors.New("unauthorized")
+	ErrInvalidToken    = errors.New("invalid token")
+	ErrInternalServer  = errors.New("internal server error")
+	ErrBadRequest      = errors.New("bad request")
 )
 
 type AdminAuthMiddleware struct{}
@@ -19,7 +23,10 @@ type AdminAuthMiddleware struct{}
 func (mw *AdminAuthMiddleware) Authenticate(ctx *weavebox.Context) error {
 	cookie, err := ctx.Request().Cookie(tokenKeyName)
 	if err != nil {
-		return ErrUnAuthenticated
+		if err == http.ErrNoCookie {
+			return ErrUnAuthenticated
+		}
+		return ErrBadRequest
 	}
 
 	tokenString := cookie.Value
@@ -33,15 +40,17 @@ func (mw *AdminAuthMiddleware) Authenticate(ctx *weavebox.Context) error {
 		return ErrUnAuthenticated
 	}
 	if !token.Valid {
-		return ErrUnAuthenticated
+		return ErrInvalidToken
 	}
 
+	if _, ok := ctx.Context.Value(contextClaimsKey).(*types.Claims); !ok {
+		ctx.Context = context.WithValue(ctx.Context, contextClaimsKey, claims)
+	}
 	return nil
 }
 
 func parseJWT(tokenString string, claims *types.Claims) (*jwt.Token, error) {
-	secret := os.Getenv("JWT_SECRET")
 	return jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(secret), nil
+		return []byte(jwtSecret), nil
 	})
 }

@@ -36,7 +36,7 @@ func NewClaims(userID string) *Claims {
 	}
 }
 
-type AuthResponse struct {
+type ApiResponse struct {
 	Status int            `json:"status"`
 	Body   map[string]any `json:"body"`
 }

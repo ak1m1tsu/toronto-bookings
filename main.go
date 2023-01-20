@@ -2,46 +2,72 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 
-	"github.com/anthdm/weavebox"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/romankravchuk/toronto-bookings/api"
-	"github.com/romankravchuk/toronto-bookings/store"
+	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/storage"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
-	app := weavebox.New()
-	app.ErrorHandler = api.HandleAPIError
+	config, err := config.LoadConfig(".")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	authMw := api.AdminAuthMiddleware{}
-	adminRoute := app.Box("/admin")
-	adminRoute.Use(authMw.Authenticate)
-
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(config.MongoURI))
 	db := client.Database("toronto-bookings")
 	if err != nil {
 		log.Fatal(err)
 	}
-	reservationStore := store.NewMongoReservationStore(db)
-	reservationHandler := api.NewReservationHandler(reservationStore)
 
-	userStore := store.NewMongoUserStore(db)
+	r := router(db)
+
+	fmt.Println("app listening on localhost:" + config.Port)
+	log.Fatal(http.ListenAndServe(":"+config.Port, r))
+}
+
+func router(db *mongo.Database) http.Handler {
+	router := chi.NewRouter()
+	router.Use(
+		middleware.RequestID,
+		middleware.Logger,
+		api.Recover,
+	)
+
+	userStore := storage.NewMongoUserStore(db)
+	authMw := api.NewAuthMiddleware(userStore)
+
+	// handle account auth
 	authHandler := api.NewAuthenticationHandler(userStore)
+	router.Route("/account", func(r chi.Router) {
+		r.Post("/sign-in", authHandler.HandleSignIn)
+		r.Post("/sign-up", authHandler.HandleSignUp)
+		r.Post("/logout", authHandler.HandleLogout)
+		r.Post("/refresh-token", authHandler.HandleRefreshToken)
+	})
 
-	// handle auth
-	authRoute := app.Box("/account")
-	authRoute.Post("/sign-in", authHandler.HandleSignIn)
-	authRoute.Post("/sign-up", authHandler.HandleSignUp)
-	authRoute.Post("/logout", authHandler.HandleLogout)
-	authRoute.Post("/refresh-token", authHandler.HandleRefreshToken)
+	// handle admin
+	reservationStore := storage.NewMongoReservationStore(db)
+	reservationHandler := api.NewReservationHandler(reservationStore)
+	reservationMw := api.NewReservationMiddleware(reservationStore)
+	router.Route("/admin", func(r chi.Router) {
+		r.Use(authMw.JWTRequired)
+		r.Route("/reservation", func(r chi.Router) {
+			r.Route("/{id}", func(r chi.Router) {
+				r.Use(reservationMw.Context)
+				r.Get("/", reservationHandler.HandleGetReservationById)
+			})
+			r.Get("/", reservationHandler.HandleGetReservations)
+			r.Post("/", reservationHandler.HandlePostReservation)
+		})
+	})
 
-	// handle admin/reservation
-	adminReservationRoute := adminRoute.Box("/reservation")
-	adminReservationRoute.Get("/:id", reservationHandler.HandleGetReservationByID)
-	adminReservationRoute.Get("/", reservationHandler.HandleGetAllReservations)
-	adminReservationRoute.Post("/", reservationHandler.HandlePostReservation)
-
-	log.Fatal(app.Serve(3000))
+	return router
 }

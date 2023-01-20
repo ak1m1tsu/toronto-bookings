@@ -1,142 +1,201 @@
 package api
 
 import (
-	"errors"
-	"log"
+	"fmt"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/anthdm/weavebox"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/romankravchuk/toronto-bookings/store"
+	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/storage"
 	"github.com/romankravchuk/toronto-bookings/types"
 )
 
+type body map[string]any
+
 var (
-	tokenKeyName     = "x-api-token"
-	contextClaimsKey = "claims"
-	defaultExpTime   = time.Now().Add(time.Minute * 5)
-	jwtSecret        = os.Getenv("JWT_SECRET")
+	AccessTokenHeader  = "access_token"
+	RefreshTokenHeader = "refresh_token"
 )
 
 type AuthenticationHandler struct {
-	store store.UserStorer
+	store storage.UserStorage
 }
 
-func NewAuthenticationHandler(store store.UserStorer) *AuthenticationHandler {
+func NewAuthenticationHandler(store storage.UserStorage) *AuthenticationHandler {
 	return &AuthenticationHandler{
 		store: store,
 	}
 }
 
-func (h *AuthenticationHandler) HandleSignUp(ctx *weavebox.Context) error {
-	creds, err := types.NewCredentialsFromRequestBody(ctx.Request().Body)
+func (h *AuthenticationHandler) HandleSignUp(writer http.ResponseWriter, request *http.Request) {
+	var resp *types.ApiResponse
+	creds, err := types.NewCredentialsFromRequestBody(request.Body)
 	if err != nil {
-		return err
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
 	user, err := types.NewUserFromCredentials(creds)
 	if err != nil {
-		return err
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	_, err = h.store.GetByEmail(ctx.Context, user.Email)
-	if err == nil {
-		return errors.New("user already exists")
+	if err = h.store.Insert(request.Context(), user); err != nil {
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	if err = h.store.Insert(ctx.Context, user); err != nil {
-		return err
-	}
-
-	resp := &types.ApiResponse{
+	resp = &types.ApiResponse{
 		Status: http.StatusOK,
-		Body: map[string]any{
-			"message": "user created",
-		},
+		Body:   body{"user": user},
 	}
-	return ctx.JSON(resp.Status, resp)
+	JSON(writer, resp.Status, resp)
 }
 
-func (h *AuthenticationHandler) HandleSignIn(ctx *weavebox.Context) error {
-	creds, err := types.NewCredentialsFromRequestBody(ctx.Request().Body)
+func (h *AuthenticationHandler) HandleSignIn(writer http.ResponseWriter, request *http.Request) {
+	var resp *types.ApiResponse
+
+	creds, err := types.NewCredentialsFromRequestBody(request.Body)
 	if err != nil {
-		return ErrBadRequest
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	dbUser, err := h.store.GetByEmail(ctx.Context, creds.Email)
+	dbUser, err := h.store.GetByEmail(request.Context(), creds.Email)
 	if err != nil {
-		return ErrInternalServer
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
 	if !dbUser.ValidatePassword(creds.Password) {
-		return ErrUnAuthenticated
+		resp = &types.ApiResponse{
+			Status: http.StatusBadRequest,
+			Body:   body{"error": "invalid password"},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	claims := types.NewClaims(dbUser.ID)
-	tokenString, err := createJWT(claims)
+	conf, _ := config.LoadConfig(".")
+
+	access_token, err := CreateToken(conf.AccessTokenExpiresIn, dbUser.ID, conf.AccessTokenPrivateKey)
 	if err != nil {
-		return err
+		resp = &types.ApiResponse{
+			Status: http.StatusInternalServerError,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	ctx.Request().AddCookie(&http.Cookie{
-		Name:    tokenKeyName,
-		Value:   tokenString,
-		Expires: claims.ExpiresAt.Local(),
-	})
-
-	resp := &types.ApiResponse{
-		Status: http.StatusOK,
-		Body:   map[string]any{"message": "authorized"},
-	}
-	return ctx.JSON(resp.Status, resp)
-}
-
-func (h *AuthenticationHandler) HandleRefreshToken(ctx *weavebox.Context) error {
-	claims, ok := ctx.Context.Value(contextClaimsKey).(*types.Claims)
-	if !ok {
-		log.Printf("%+v\n", ctx.Context.Value(contextClaimsKey))
-		return ErrInternalServer
-	}
-
-	if time.Until(claims.ExpiresAt.Time) > 30*time.Second {
-		return ErrBadRequest
-	}
-
-	claims.ExpiresAt = jwt.NewNumericDate(defaultExpTime)
-	token, err := createJWT(claims)
+	refresh_token, err := CreateToken(conf.RefreshTokenExpiresIn, dbUser.ID, conf.RefreshTokenPrivateKey)
 	if err != nil {
-		log.Println(err)
-		return ErrInternalServer
+		resp = &types.ApiResponse{
+			Status: http.StatusInternalServerError,
+			Body:   body{"error": err.Error()},
+		}
+		JSON(writer, resp.Status, resp)
+		return
 	}
 
-	ctx.Request().AddCookie(&http.Cookie{
-		Name:    tokenKeyName,
-		Value:   token,
-		Expires: claims.ExpiresAt.Local(),
+	http.SetCookie(writer, &http.Cookie{
+		Name:     AccessTokenHeader,
+		Value:    access_token,
+		MaxAge:   conf.AccessTokenMaxAge * 60,
+		HttpOnly: true,
+	})
+	http.SetCookie(writer, &http.Cookie{
+		Name:     RefreshTokenHeader,
+		Value:    refresh_token,
+		MaxAge:   conf.RefreshTokenMaxAge * 60,
+		HttpOnly: true,
 	})
 
-	resp := &types.ApiResponse{
+	resp = &types.ApiResponse{
 		Status: http.StatusOK,
-		Body:   map[string]any{"success": true},
+		Body:   body{"access_token": access_token},
 	}
-	return ctx.JSON(resp.Status, resp)
+	JSON(writer, resp.Status, resp)
 }
 
-func (h *AuthenticationHandler) HandleLogout(ctx *weavebox.Context) error {
-	ctx.Request().AddCookie(&http.Cookie{
-		Name:    tokenKeyName,
-		Expires: time.Now(),
+func (h *AuthenticationHandler) HandleLogout(writer http.ResponseWriter, request *http.Request) {
+	http.SetCookie(writer, &http.Cookie{
+		Name:    AccessTokenHeader,
+		Expires: time.Now().Add(time.Duration(-1)),
+	})
+	http.SetCookie(writer, &http.Cookie{
+		Name:    RefreshTokenHeader,
+		Expires: time.Now().Add(time.Duration(-1)),
 	})
 	resp := &types.ApiResponse{
 		Status: http.StatusOK,
-		Body:   map[string]any{"success": true},
+		Body:   body{"success": true},
 	}
-	return ctx.JSON(resp.Status, resp)
+	JSON(writer, resp.Status, resp)
 }
 
-func createJWT(claims *types.Claims) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(jwtSecret))
+func (h *AuthenticationHandler) HandleRefreshToken(writer http.ResponseWriter, request *http.Request) {
+	resp := &types.ApiResponse{Status: http.StatusForbidden}
+
+	cookie, err := request.Cookie(RefreshTokenHeader)
+	if err != nil {
+		resp.Body = body{"error": err.Error()}
+		JSON(writer, resp.Status, resp)
+	}
+
+	conf, _ := config.LoadConfig(".")
+
+	sub, err := ValidateToken(cookie.Value, conf.RefreshTokenPublicKey)
+	if err != nil {
+		resp.Body = body{"error": err.Error()}
+		JSON(writer, resp.Status, resp)
+		return
+	}
+
+	user, err := h.store.GetByID(request.Context(), fmt.Sprint(sub))
+	if err != nil {
+		resp.Body = body{"error": err.Error()}
+		JSON(writer, resp.Status, resp)
+		return
+	}
+
+	access_token, err := CreateToken(conf.AccessTokenExpiresIn, user.ID, conf.AccessTokenPrivateKey)
+	if err != nil {
+		resp.Body = body{"error": err.Error()}
+		JSON(writer, resp.Status, resp)
+		return
+	}
+
+	http.SetCookie(writer, &http.Cookie{
+		Name:    AccessTokenHeader,
+		Value:   access_token,
+		Expires: time.Now().Add(conf.AccessTokenExpiresIn),
+	})
+
+	resp = &types.ApiResponse{
+		Status: http.StatusOK,
+		Body:   body{"access_token": access_token},
+	}
+	JSON(writer, resp.Status, resp)
 }

@@ -3,11 +3,21 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
-	"github.com/anthdm/weavebox"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/go-chi/chi/v5"
+	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/storage"
 	"github.com/romankravchuk/toronto-bookings/types"
+)
+
+type key int
+
+const (
+	keyUser key = iota
+	keyReservation
 )
 
 var (
@@ -18,39 +28,100 @@ var (
 	ErrBadRequest      = errors.New("bad request")
 )
 
-type AdminAuthMiddleware struct{}
-
-func (mw *AdminAuthMiddleware) Authenticate(ctx *weavebox.Context) error {
-	cookie, err := ctx.Request().Cookie(tokenKeyName)
-	if err != nil {
-		if err == http.ErrNoCookie {
-			return ErrUnAuthenticated
-		}
-		return ErrBadRequest
-	}
-
-	tokenString := cookie.Value
-	if len(tokenString) == 0 {
-		return ErrUnAuthenticated
-	}
-
-	claims := &types.Claims{}
-	token, err := parseJWT(tokenString, claims)
-	if err != nil {
-		return ErrUnAuthenticated
-	}
-	if !token.Valid {
-		return ErrInvalidToken
-	}
-
-	if _, ok := ctx.Context.Value(contextClaimsKey).(*types.Claims); !ok {
-		ctx.Context = context.WithValue(ctx.Context, contextClaimsKey, claims)
-	}
-	return nil
+type AuthMiddleware struct {
+	store storage.UserStorage
 }
 
-func parseJWT(tokenString string, claims *types.Claims) (*jwt.Token, error) {
-	return jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(jwtSecret), nil
+func NewAuthMiddleware(store storage.UserStorage) *AuthMiddleware {
+	return &AuthMiddleware{
+		store: store,
+	}
+}
+
+func (m *AuthMiddleware) JWTRequired(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var (
+			resp         *types.ApiResponse = &types.ApiResponse{Status: http.StatusUnauthorized}
+			access_token string
+		)
+
+		cookie, _ := r.Cookie(AccessTokenHeader)
+		authHeader := r.Header.Get("Authorization")
+		fields := strings.Fields(authHeader)
+
+		if len(fields) != 0 && fields[0] == "Bearer" {
+			access_token = fields[1]
+		} else {
+			access_token = cookie.Value
+		}
+
+		if access_token == "" {
+			resp.Body = body{"error": "your are not logged in"}
+			JSON(w, resp.Status, resp)
+			return
+		}
+
+		conf, _ := config.LoadConfig(".")
+		sub, err := ValidateToken(access_token, conf.AccessTokenPublicKey)
+		if err != nil {
+			resp.Body = body{"error": err.Error()}
+			JSON(w, resp.Status, resp)
+			return
+		}
+
+		user, err := m.store.GetByID(r.Context(), fmt.Sprint(sub))
+		if err != nil {
+			resp.Body = body{"error": "the user belonging to this token no logger exists"}
+			JSON(w, resp.Status, resp)
+			return
+		}
+		ctx := context.WithValue(r.Context(), keyUser, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func Recover(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if p := recover(); p != nil {
+				err, ok := p.(error)
+				if !ok {
+					err = fmt.Errorf("%+v", p)
+				}
+
+				resp := &types.ApiResponse{Status: http.StatusInternalServerError, Body: body{"error": err.Error()}}
+				JSON(w, resp.Status, resp)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	}
+	return http.HandlerFunc(fn)
+}
+
+type ReservationMiddleware struct {
+	store storage.ReservationStorage
+}
+
+func NewReservationMiddleware(store storage.ReservationStorage) *ReservationMiddleware {
+	return &ReservationMiddleware{
+		store: store,
+	}
+}
+
+func (m *ReservationMiddleware) Context(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		reservationID := chi.URLParam(r, "id")
+		reservation, err := m.store.GetByID(r.Context(), reservationID)
+		if err != nil {
+			resp := &types.ApiResponse{
+				Status: http.StatusNotFound,
+				Body:   body{"error": err},
+			}
+			JSON(w, resp.Status, resp)
+			return
+		}
+		ctx := context.WithValue(r.Context(), keyReservation, reservation)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+	return http.HandlerFunc(fn)
 }

@@ -28,7 +28,7 @@ type GetReservationRequest struct {
 	ID string `json:"id"`
 }
 
-func NewProductFromReq(req *CreateReservationRequest) (*Reservation, error) {
+func NewReservationFromRequest(req *CreateReservationRequest) (*Reservation, error) {
 	if err := ValidateCreateReservationRequest(req); err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func ValidateCreateReservationRequest(req *CreateReservationRequest) error {
 }
 
 func isFieldValid(field, pattern string) bool {
-	return regexp.MustCompile(pattern).MatchString(field)
+	return regexp.MustCompile(pattern).Match([]byte(field))
 }
 
 func normalizePhoneNumber(phoneNumber string) string {

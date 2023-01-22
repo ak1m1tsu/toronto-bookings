@@ -11,6 +11,7 @@ type UserServicer interface {
 	GetByID(context.Context, string) (*types.User, error)
 	GetByEmail(context.Context, string) (*types.User, error)
 	GetAll(context.Context) ([]*types.User, error)
+	ValidatePassword(*types.User, string) bool
 }
 
 type ReservationServicer interface {

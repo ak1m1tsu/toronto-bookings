@@ -41,6 +41,22 @@ type ApiResponse struct {
 	Body   map[string]any `json:"body"`
 }
 
+func NewApiResponse(status int, body map[string]any) *ApiResponse {
+	return &ApiResponse{Status: status, Body: body}
+}
+
+func (res *ApiResponse) SetStatus(status int) {
+	res.Status = status
+}
+
+func (res *ApiResponse) SetBody(body map[string]any) {
+	res.Body = body
+}
+
+func (res *ApiResponse) SetError(err error) {
+	res.Body = map[string]any{"error": err.Error()}
+}
+
 func ValidateCredentials(creds *Credentials) error {
 	if !isFieldValid(creds.Email, emailRegexPattern) {
 		return fmt.Errorf("email is not valid")

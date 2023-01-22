@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/romankravchuk/toronto-bookings/api"
 	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/service"
 	"github.com/romankravchuk/toronto-bookings/storage"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -42,10 +43,11 @@ func router(db *mongo.Database) http.Handler {
 	)
 
 	userStore := storage.NewMongoUserStore(db)
+	userService := service.NewUserService(userStore)
 	authMw := api.NewAuthMiddleware(userStore)
 
 	// handle account auth
-	authHandler := api.NewAuthenticationHandler(userStore)
+	authHandler := api.NewAuthenticationHandler(userService)
 	router.Route("/account", func(r chi.Router) {
 		r.Post("/sign-in", authHandler.HandleSignIn)
 		r.Post("/sign-up", authHandler.HandleSignUp)

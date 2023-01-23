@@ -8,6 +8,13 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
+type Token struct {
+	PublicKey  string
+	PrivateKey string
+	ExpiresIn  time.Duration
+	MaxAge     int
+}
+
 func CreateToken(ttl time.Duration, payload interface{}, privateKey string) (string, error) {
 	decodedPrivateKey, err := base64.StdEncoding.DecodeString(privateKey)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/internal/config"
 	"github.com/romankravchuk/toronto-bookings/internal/router/handlers/models"
 	"github.com/romankravchuk/toronto-bookings/internal/service"
 )
@@ -24,11 +24,13 @@ var (
 )
 
 type AuthenticationHandler struct {
-	svc service.UserServicer
+	svc          service.UserServicer
+	accessToken  config.Token
+	refreshToken config.Token
 }
 
-func NewAuthenticationHandler(svc service.UserServicer) *AuthenticationHandler {
-	return &AuthenticationHandler{svc: svc}
+func NewAuthenticationHandler(svc service.UserServicer, accessToken, refreshToken config.Token) *AuthenticationHandler {
+	return &AuthenticationHandler{svc: svc, accessToken: accessToken, refreshToken: refreshToken}
 }
 
 func (h *AuthenticationHandler) HandleSignUp(writer http.ResponseWriter, request *http.Request) {
@@ -80,15 +82,15 @@ func (h *AuthenticationHandler) HandleSignIn(writer http.ResponseWriter, request
 
 	resp.SetStatus(http.StatusInternalServerError)
 
-	conf, _ := config.LoadConfig(".")
-	access_token, err := CreateToken(conf.AccessTokenExpiresIn, user.ID, conf.AccessTokenPrivateKey)
+	
+	access_token, err := CreateToken(h.accessToken.ExpiresIn, user.ID, h.accessToken.PrivateKey)
 	if err != nil {
 		resp.SetError(err)
 		JSON(writer, resp.Status, resp)
 		return
 	}
 
-	refresh_token, err := CreateToken(conf.RefreshTokenExpiresIn, user.ID, conf.RefreshTokenPrivateKey)
+	refresh_token, err := CreateToken(h.refreshToken.ExpiresIn, user.ID, h.refreshToken.PrivateKey)
 	if err != nil {
 		resp.SetError(err)
 		JSON(writer, resp.Status, resp)
@@ -98,13 +100,13 @@ func (h *AuthenticationHandler) HandleSignIn(writer http.ResponseWriter, request
 	http.SetCookie(writer, &http.Cookie{
 		Name:     AccessTokenHeader,
 		Value:    access_token,
-		MaxAge:   conf.AccessTokenMaxAge * 60,
+		MaxAge:   h.accessToken.MaxAge * 60,
 		HttpOnly: true,
 	})
 	http.SetCookie(writer, &http.Cookie{
 		Name:     RefreshTokenHeader,
 		Value:    refresh_token,
-		MaxAge:   conf.RefreshTokenMaxAge * 60,
+		MaxAge:   h.refreshToken.MaxAge * 60,
 		HttpOnly: true,
 	})
 
@@ -135,9 +137,7 @@ func (h *AuthenticationHandler) HandleRefreshToken(writer http.ResponseWriter, r
 		return
 	}
 
-	conf, _ := config.LoadConfig(".")
-
-	sub, err := ValidateToken(cookie.Value, conf.RefreshTokenPublicKey)
+	sub, err := ValidateToken(cookie.Value, h.refreshToken.PublicKey)
 	if err != nil {
 		resp.SetError(err)
 		JSON(writer, resp.Status, resp)
@@ -151,7 +151,7 @@ func (h *AuthenticationHandler) HandleRefreshToken(writer http.ResponseWriter, r
 		return
 	}
 
-	access_token, err := CreateToken(conf.AccessTokenExpiresIn, user.ID, conf.AccessTokenPrivateKey)
+	access_token, err := CreateToken(h.accessToken.ExpiresIn, user.ID, h.accessToken.PrivateKey)
 	if err != nil {
 		resp.SetError(err)
 		JSON(writer, resp.Status, resp)
@@ -161,7 +161,7 @@ func (h *AuthenticationHandler) HandleRefreshToken(writer http.ResponseWriter, r
 	http.SetCookie(writer, &http.Cookie{
 		Name:    AccessTokenHeader,
 		Value:   access_token,
-		Expires: time.Now().Add(conf.AccessTokenExpiresIn),
+		Expires: time.Now().Add(h.accessToken.ExpiresIn),
 	})
 
 	resp = models.NewApiResponse(http.StatusOK, body{"access_token": access_token})

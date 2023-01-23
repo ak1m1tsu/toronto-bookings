@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/romankravchuk/toronto-bookings/internal/config"
 	"github.com/romankravchuk/toronto-bookings/internal/router/handlers"
 	"github.com/romankravchuk/toronto-bookings/internal/service"
 	"github.com/romankravchuk/toronto-bookings/internal/storage"
@@ -14,7 +15,7 @@ type Router struct {
 	db *mongo.Database
 }
 
-func NewRouter(db *mongo.Database) *Router {
+func NewRouter(db *mongo.Database, config *config.Config) *Router {
 	router := chi.NewRouter()
 	router.Use(
 		chimiddleware.RequestID,
@@ -24,9 +25,9 @@ func NewRouter(db *mongo.Database) *Router {
 
 	userStore := storage.NewMongoUserStore(db)
 	userService := service.NewUserService(userStore)
-	authMw := handlers.NewAuthMiddleware(userStore)
+	authMw := handlers.NewAuthMiddleware(userStore, config.AccessToken, config.RefreshToken)
 
-	authHandler := handlers.NewAuthenticationHandler(userService)
+	authHandler := handlers.NewAuthenticationHandler(userService, config.AccessToken, config.RefreshToken)
 	router.Route("/account", func(r chi.Router) {
 		r.Post("/sign-in", authHandler.HandleSignIn)
 		r.Post("/sign-up", authHandler.HandleSignUp)

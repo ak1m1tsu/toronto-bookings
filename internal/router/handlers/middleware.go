@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/romankravchuk/toronto-bookings/config"
+	"github.com/romankravchuk/toronto-bookings/internal/config"
 	"github.com/romankravchuk/toronto-bookings/internal/router/handlers/models"
 	"github.com/romankravchuk/toronto-bookings/internal/storage"
 )
@@ -29,13 +29,13 @@ var (
 )
 
 type AuthMiddleware struct {
-	store storage.UserStorage
+	store        storage.UserStorage
+	accessToken  config.Token
+	refreshToken config.Token
 }
 
-func NewAuthMiddleware(store storage.UserStorage) *AuthMiddleware {
-	return &AuthMiddleware{
-		store: store,
-	}
+func NewAuthMiddleware(store storage.UserStorage, accessToken, refreshToken config.Token) *AuthMiddleware {
+	return &AuthMiddleware{store: store, accessToken: accessToken, refreshToken: refreshToken}
 }
 
 func (m *AuthMiddleware) JWTRequired(next http.Handler) http.Handler {
@@ -61,8 +61,7 @@ func (m *AuthMiddleware) JWTRequired(next http.Handler) http.Handler {
 			return
 		}
 
-		conf, _ := config.LoadConfig(".")
-		sub, err := ValidateToken(access_token, conf.AccessTokenPublicKey)
+		sub, err := ValidateToken(access_token, m.accessToken.PrivateKey)
 		if err != nil {
 			resp.Body = body{"error": err.Error()}
 			JSON(w, resp.Status, resp)

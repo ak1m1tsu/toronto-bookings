@@ -1,5 +1,5 @@
 build:
-	@go build -o bin/toronto-bookings
+	@go build -o bin/toronto-bookings ./cmd/toronto-bookings
 
 run: build
 	@./bin/toronto-bookings

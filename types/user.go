@@ -3,11 +3,24 @@ package types
 import "golang.org/x/crypto/bcrypt"
 
 type User struct {
-	ID                string `bson:"_id,omitempty" json:"id"`
-	Email             string `bson:"email" json:"email"`
-	EncryptedPassword string `bson:"encryptedPassword" json:"encrypted_password"`
-	IsAdmin           bool   `bson:"isAdmin" json:"is_admin"`
-	Token             string `bson:"token" json:"_"`
+	ID                string `bson:"_id,omitempty"`
+	Email             string `bson:"email"`
+	EncryptedPassword string `bson:"encryptedPassword"`
+	IsAdmin           bool   `bson:"isAdmin"`
+}
+
+type CreateUserResponse struct {
+	ID      string `json:"id"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
+func NewCreateUserResponse(user *User) *CreateUserResponse {
+	return &CreateUserResponse{
+		ID:      user.ID,
+		Email:   user.Email,
+		IsAdmin: user.IsAdmin,
+	}
 }
 
 func NewAdminUser(email, password string) (*User, error) {
